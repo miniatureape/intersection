@@ -1,5 +1,6 @@
 <head>
     <style>
+
         html, body {
             padding: 0;
             margin: 0;
@@ -7,16 +8,49 @@
             width: 100%;
             background: #2E2633;
         }
+
+        #game-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
         canvas {
             margin: 20px;
         }
+
+        #intro {
+            display: none;
+            position: absolute;
+            width: 40%;
+            top: 50px;
+        }
+
+        #game-info {
+            position: absolute;
+        }
+
     </style>
 </head>
-<canvas id="canvas" width="800" height="600"></canvas>
+
+<section id="game-container">
+
+    <canvas id="canvas" width="800" height="600"></canvas>
+
+    <p id="game-info"></p>
+
+    <section id="intro">
+        <h1>Vanishing Point</h1>
+        <p>Tap the point the two line segments would intersect.</p>
+    </section>
+
+</section>
+
 <script src="lib/underscore.js"></script>
-<script src="events.js"></script>
+<script src="lib/events.js"></script>
 <script src="lib/Vector2D.js"></script>
 <script src="lib/tween.js"></script>
+
 <script>
 
     var Vec = Vector2D,
@@ -31,6 +65,8 @@
         origin = new Vec(0, 0),
         padding = 40,
         _time;
+    
+    var messenger = _.extend({}, Events);
 
     var makeBounds = function(topLeft, topRight, bottomLeft, bottomRight) {
         var bounds = [new Vec(topLeft, topRight), new Vec(bottomLeft, bottomRight)];
@@ -185,6 +221,7 @@
                 diff.scale(.3)
                 var end = Vec.add(this.start, diff);
                 this.end = new TweenVec(end, end.get(), 500);
+                this.end.onFinish = this.finishExtending
                 this.alpha.start();
             },
 
@@ -196,11 +233,17 @@
                 this.end.start();
             },
 
-            extended: function() {
-                return this.end.finished();
-            }
+            finishExtending: function() {
+                messenger.trigger('line-extended');
+            },
+
 
         };
+
+        var ROUNDINIT = 0,
+            EXTEND = 1,
+            EVALUATE = 2,
+            FINISH = 3;
 
         var Game = function(canvas, ctx, options) {
 
@@ -211,6 +254,7 @@
 
             this.canvas = canvas;
             this.ctx = ctx;
+            this.infoTpl = _.template("<label>score</label>: <%= score %> <%= round %> / 5");
 
             this.bounds = makeBounds(0, 0, canvas.width, canvas.height);
             this.leftBounds = makeBounds(0, canvas.height / 2, (canvas.width / 2) - this.options.gutter, (canvas.height / 2) + canvas.height / 2);
@@ -221,12 +265,16 @@
             this.round = 0;
             this.score = 0;
 
+            this.state = ROUNDINIT;
+
             this.yi = null;
 
-            this.translation = new TweenVec(origin, origin);
+            this.translation = new TweenVec(origin, origin, 150);
 
             this.leftLine = new Line;
             this.rightLine = new Line;
+
+            messenger.on('line-extended', _.bind(this.markExtended, this));
 
             this.marker = new Marker;
 
@@ -251,12 +299,12 @@
             },
 
             handleClick: function(e) {
-                if (this.evaluating) {
+                if (this.state != ROUNDINIT) {
                     return;
                 }
-                this.evaluating = true;
+                this.state = 1;
                 this.guess = new Vec(e.offsetX, e.offsetY)
-                this.evaluate(this.guess);
+                this.displayIntersection(this.guess);
             },
 
             handleKey: function(e) {
@@ -264,12 +312,10 @@
                 this.running = !this.running;
             },
 
-            evaluate: function(pos) {
+            displayIntersection: function(pos) {
                 this.marker.reset(pos);
                 this.leftLine.extend();
                 this.rightLine.extend();
-                this.translation.to = Vec.sub(this.yi, pos);
-                this.translation.start();
             },
 
             run: function(step) {
@@ -281,6 +327,10 @@
 
                 this.ctx.save();
                 this.clear();
+
+                if (this.state === EVALUATE) {
+                    this.ctx.translate(this.translation.val().x, this.translation.val().y);
+                }
 
                 if (this.options.debug) {
                     this.debugDraw();
@@ -306,12 +356,28 @@
             },
 
             nextRound: function() {
+                this.state = 0;
+
                 this.round++;
                 this.clicked = false;
                 this.yi = new Vec(this.bounds.width() / 2, Math.random() * this.bounds.height());
                 this.leftLine.generate(this.yi, this.leftBounds)
                 this.rightLine.generate(this.yi, this.rightBounds)
+                this.updateGameInfo();
             }, 
+
+            updateGameInfo: function() {
+                document.getElementById('game-info').innerHTML = this.infoTpl(this);
+            },
+
+            markExtended: function() {
+                if (!(this.state === EVALUATE)) {
+                    this.state = EVALUATE;
+                    this.halfwayPoint = Vec.add(this.yi, Vec.sub(this.yi, this.guess).scale(-.5));
+                    this.translation.to = Vec.sub(center, this.halfwayPoint);
+                    this.translation.start();
+                }
+            },
 
             clear: function() {
                 // TODO, consider getting these locally
@@ -319,9 +385,18 @@
             },
 
             debugDraw: function() {
+                this.ctx.save();
+                this.ctx.fillStyle = 'white';
                 this.ctx.fillRect(this.yi.x, this.yi.y, 5, 5);
+                if (this.halfwayPoint) {
+                    this.ctx.fillStyle = 'red';
+                    this.ctx.fillRect(this.halfwayPoint.x, this.halfwayPoint.y, 5, 5);
+                }
+                this.ctx.fillStyle = 'pink';
+                this.ctx.fillRect(this.translation.val().x, this.translation.val().y, 10, 10);
                 fillBounds(this.ctx, this.leftBounds);
                 fillBounds(this.ctx, this.rightBounds);
+                this.ctx.restore();
             }
 
         };
@@ -330,7 +405,5 @@
         game.start();
 
         window.addEventListener('resize', _.debounce(resize, 30));
-
-
 
 </script>
