@@ -50,8 +50,12 @@
 
 <script src="lib/underscore.js"></script>
 <script src="lib/events.js"></script>
-<script src="lib/Vector2D.js"></script>
+<script src="lib/vector2d.js"></script>
 <script src="lib/tween.js"></script>
+<script src="geom.js"></script>
+<script src="drawing.js"></script>
+<script src="components/marker.js"></script>
+<script src="components/line.js"></script>
 
 <script>
 
@@ -59,40 +63,26 @@
         raf = webkitRequestAnimationFrame,
         canvas = document.getElementById('canvas'),
         ctx = canvas.getContext('2d'),
+        _time, 
         width,
         height,
         halfX,
         halfY,
-        center = new Vec(0, 0),
-        origin = new Vec(0, 0),
-        xaxis = new Vec(1, 0),
         padding = 40,
-        _time;
+        xaxis = new Vec(1, 0),
+        origin = new Vec(0, 0),
+        center = new Vec(0, 0),
+        infoTemplateStr = "<label>score</label>: <%= score %> <%= round %> / 5",
+        messenger = _.extend({}, Events);
 
-    var infoTemplateStr = "<label>score</label>: <%= score %> <%= round %> / 5"   
+        // Game States
 
-    var messenger = _.extend({}, Events);
+        ROUNDINIT = 'ROUNDINIT',
+        EXTEND = 'EXTEND',
+        EVALUATE = 'EVALUATE',
+        MEASURE = 'MEASURE',
+        FINISH = 'FINISH';
 
-    var makeBounds = function(topLeft, topRight, bottomLeft, bottomRight) {
-        var bounds = [new Vec(topLeft, topRight), new Vec(bottomLeft, bottomRight)];
-        bounds.width = function() {
-            return bounds[1].x - bounds[0].x;
-        };
-        bounds.height = function() {
-            return bounds[1].y - bounds[0].y;
-        };
-        return bounds;
-    }
-
-    var boundedRand = function(tlVec, trVec) {
-        var x = (Math.random() * (trVec.x - tlVec.x) + tlVec.x),
-            y = (Math.random() * (trVec.y - tlVec.y) + tlVec.y);
-            return new Vec(x, y);
-    }
-
-    var lerp = function(x, y, amt) {
-        return x + ((y - x) * amt);
-    }
 
     var resize = function() {
         canvas.width  = document.documentElement.clientWidth - padding;
@@ -105,381 +95,259 @@
     }
     resize();
 
-    var 
+    // debug
 
-        leftBounds = [
-            new Vec(padding, halfY),
-            new Vec(halfX - padding, height - padding)
-        ],
+    var Flash = function() {
 
-        rightBounds = [
-            new Vec(halfX + padding, halfY),
-            new Vec(width - padding, height - padding)
-        ],
+    }
 
-        leftPoint = boundedRand.apply(null, leftBounds),
-        rightPoint = boundedRand.apply(null, rightBounds);
+    var Display = function(elem, templateStr, attrs) {
 
-        // debug
-        var fillBounds = function(ctx, bounds, fill) {
-            ctx.save();
-            ctx.fillStyle = fill || 'rgba(200, 200, 230, .3)';
-            ctx.fillRect(bounds[0].x, bounds[0].y, bounds[1].x - bounds[0].x, bounds[1].y - bounds[0].y);
-            ctx.restore();
+        this.elem = elem;
+        this.tpl = _.template(templateStr);
+
+        this.attrs = _.extend({
+            rounds: 5,
+            round: 1,
+            score: 0
+        }, attrs);
+
+    }
+
+    Display.prototype = {
+
+        set: function(prop, val) {
+            if (typeof prop === 'string') {
+                this.attrs[prop] = val;
+            } else {
+                this.attrs = _.extend(this.attrs, prop);
+            }
+            this.render();
+        },
+
+        render: function() {
+            this.elem.innerHTML = this.tpl(this.attrs);
         }
 
-        var lineBetween = function(ctx, vec1, vec2, stroke) {
-            ctx.save();
-            ctx.beginPath()
-            ctx.strokeStyle = stroke || '#fff';
-            ctx.moveTo(vec1.x, vec1.y);
-            ctx.lineTo(vec2.x, vec2.y);
-            ctx.stroke();
-            ctx.restore();
-        }
+    }
 
-        var Display = function(elem, templateStr, attrs) {
+    var Game = function(canvas, ctx, options) {
 
-            this.elem = elem;
-            this.tpl = _.template(templateStr);
+        this.options = _.extend({
+            debug: false,
+            gutter: 50
+        }, options || {});
 
-            this.attrs = _.extend({
-                rounds: 5,
-                round: 1,
-                score: 0
-            }, attrs);
+        this.canvas = canvas;
+        this.ctx = ctx;
 
-        }
+        this.display = new Display(
+            document.getElementById('game-info'), 
+            infoTemplateStr
+        );
 
-        Display.prototype = {
+        this.bounds = Geometry.makeBounds(0, 0, canvas.width, canvas.height);
+        this.leftBounds = Geometry.makeBounds(0, canvas.height / 2, (canvas.width / 2) - this.options.gutter, (canvas.height / 2) + canvas.height / 2);
+        this.rightBounds = Geometry.makeBounds((canvas.width / 2) + this.options.gutter, canvas.height / 2, canvas.width, (canvas.height / 2) + canvas.height / 2);
 
-            set: function(prop, val) {
-                if (typeof prop === 'string') {
-                    this.attrs[prop] = val;
-                } else {
-                    this.attrs = _.extend(this.attrs, prop);
-                }
-                this.render();
-            },
+        this.guess = null;
 
-            render: function() {
-                this.elem.innerHTML = this.tpl(this.attrs);
+        this.round = 0;
+        this.score = 0;
+
+        this.state = ROUNDINIT;
+
+        this.running = false;
+        _.bindAll.apply(_, [this].concat(_.methods(this))); 
+        this.bindEvents();
+        this.initialize();
+    }
+
+    Game.prototype = {
+
+        initialize: function() {
+            this.rotation = 0;
+            this.yi = null;
+
+            this.translation = new TweenVec(origin, origin);
+
+            this.leftLine = new Line;
+            this.rightLine = new Line;
+
+            messenger.on('line-extended', _.bind(this.markExtended, this));
+
+            this.marker = new Marker;
+
+            this.drawables = [this.leftLine, this.rightLine, this.marker];
+
+        },
+
+        bindEvents: function() {
+
+            this.canvas.addEventListener('click', this.handleClick);
+
+            if ('ontouchend' in window) {
+                this.canvas.addEventListener('touchend', this.handleClick);
             }
 
-        }
+            document.addEventListener('keyup', this.handleKey);
+        },
 
-        var Marker = function(pos) {
-            this.size = new Tween(0, 30, 200);
-            this.alpha = new Tween(0, .3, 200);
-            this.pos = pos || new Vec(0, 0);
-            this.rgb = [239,255,205];
-            this.acc = .4
-            this.curAcc = this.acc;
-            this.visible = false;
-        }
+        handleClick: function(e) {
+            if (this.state != ROUNDINIT) {
+                return;
+            }
+            this.state = 1;
+            this.guess = new Vec(e.offsetX, e.offsetY)
+            this.displayIntersection(this.guess);
+        },
 
-        Marker.prototype = {
+        handleKey: function(e) {
+            if (e.which === 32)
+            this.running = !this.running;
+        },
 
-            reset: function(pos) {
-                this.size.start();
-                this.alpha.start();
+        displayIntersection: function(pos) {
+            this.marker.reset(pos);
+            this.leftLine.extend();
+            this.rightLine.extend();
+        },
 
-                this.visible = true;
-                this.curAcc = this.acc;
-                if (pos) {
-                    this.pos = pos;
+        run: function(step) {
+            _time = step;
+
+            if (this.running) {
+                raf(this.run);
+            }
+
+            this.ctx.save();
+            this.clear();
+
+            if (this.state === EVALUATE) {
+                this.ctx.translate(this.translation.val().x, this.translation.val().y);
+                if (this.rotation) {
+                    this.ctx.translate(this.halfwayPoint.x, this.halfwayPoint.y);
+                    this.ctx.rotate(this.rotation.val());
+                    this.ctx.translate(-this.halfwayPoint.x, -this.halfwayPoint.y);
                 }
-            },
+            }
 
-            draw: function(ctx) {
-                if (!this.visible) return;
-                var fill = 'rgba(' + this.rgb.join(',') + ',' + this.alpha.val() + ')';
-                ctx.save();
-                ctx.fillStyle = fill;
-                ctx.translate(this.pos.x, this.pos.y);
-                ctx.beginPath();
-                ctx.arc(0, 0, this.size.val(), 0, Math.PI * 2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.moveTo(0, -(this.size.val() / 7));
-                ctx.lineTo(0, (this.size.val() / 7));
-                ctx.moveTo(-(this.size.val() / 7), 0);
-                ctx.lineTo((this.size.val() / 7), 0);
-                ctx.stroke();
-                ctx.restore()
-            }, 
-            
-            update: function() {}
-        };
+            if (this.options.debug) {
+                this.debugDraw();
+            }
 
-        var Line = function(options) {
-            this.options = _.extend({
-                rgb: [239,255,205],
-            }, options || {});
-            this.start = null;
-            this.end = null;
-            this.debug = false;
-            this.alpha = new Tween(0, 1, 300);
-        }
+            var i = 0;
+            for (; i < this.drawables.length; i++) {
+                this.drawables[i].draw(this.ctx);
+                this.drawables[i].update();
+            }
 
-        Line.prototype = {
+            this.ctx.restore();
+        },
 
-            draw: function(ctx) {
-                if (!this.start || !this.end) return;
+        start: function() {
+            this.running = true;
+            webkitRequestAnimationFrame(this.run);
+            this.nextRound();
+        },
 
-                if (this.debug) {
-                    this.debugDraw(ctx);
-                }
-
-                ctx.save();
-                var stroke = 'rgba(' + this.options.rgb.join(',') + ',' + this.alpha.val() + ')';
-
-                lineBetween(ctx, this.start, this.end.val(), stroke);
-                ctx.restore();
-
-            },
-
-            debugDraw: function(ctx) {
-                ctx.fillRect(this.start.x, this.start.y, 5, 5);
-                ctx.fillRect(this.end.val().x, this.end.val().y, 5, 5);
-                lineBetween(ctx, this.start, this.end.val());
-            },
-
-            update: function() {},
-
-            reset: function() {
-                this.alpha.start();
-            },
-
-            generate: function(yi, bounds) {
-                var diff, ray;
-                this.start = boundedRand.apply(null, bounds);
-                diff = Vec.sub(yi, this.start);
-                diff.scale(.3)
-                var end = Vec.add(this.start, diff);
-                this.end = new TweenVec(end, end.get(), 500);
-                this.end.onFinish = this.finishExtending
-                this.alpha.start();
-            },
-
-            extend: function() {
-                var diff = Vec.sub(this.end.val(), this.start);
-                diff.normalize();
-                diff.scale(width);
-                this.end.to = Vec.add(this.end.val(), diff);
-                this.end.start();
-            },
-
-            finishExtending: function() {
-                messenger.trigger('line-extended');
-            },
-
-        };
-
-        var ROUNDINIT = 'ROUNDINIT',
-            EXTEND = 'EXTEND',
-            EVALUATE = 'EVALUATE',
-            MEASURE = 'MEASURE',
-            FINISH = 'FINISH';
-
-        var Game = function(canvas, ctx, options) {
-
-            this.options = _.extend({
-                debug: true,
-                gutter: 50
-            }, options || {});
-
-            this.canvas = canvas;
-            this.ctx = ctx;
-
-            this.display = new Display(
-                document.getElementById('game-info'), 
-                infoTemplateStr
-            );
-
-            this.bounds = makeBounds(0, 0, canvas.width, canvas.height);
-            this.leftBounds = makeBounds(0, canvas.height / 2, (canvas.width / 2) - this.options.gutter, (canvas.height / 2) + canvas.height / 2);
-            this.rightBounds = makeBounds((canvas.width / 2) + this.options.gutter, canvas.height / 2, canvas.width, (canvas.height / 2) + canvas.height / 2);
-
-            this.guess = null;
-
-            this.round = 0;
-            this.score = 0;
-
-            this.state = ROUNDINIT;
-
+        stop: function() {
             this.running = false;
-            _.bindAll.apply(_, [this].concat(_.methods(this))); 
-            this.bindEvents();
-            this.initialize();
-        }
+        },
 
-        Game.prototype = {
+        nextRound: function() {
+            this.state = 'ROUNDINIT';
 
-            initialize: function() {
-                this.rotation = 0;
-                this.yi = null;
+            this.round++;
+            this.clicked = false;
+            this.yi = new Vec(this.bounds.width() / 2, Math.random() * this.bounds.height());
+            this.leftLine.generate(this.yi, this.leftBounds)
+            this.rightLine.generate(this.yi, this.rightBounds)
+            this.updateGameInfo();
+        }, 
 
-                this.translation = new TweenVec(origin, origin, 150);
+        updateGameInfo: function() {
+            this.display.set({ round: this.round, score: this.score });
+        },
 
-                this.leftLine = new Line;
-                this.rightLine = new Line;
+        markExtended: function() {
+            if (!(this.state === EVALUATE)) {
+                this.state = EVALUATE;
+                var diff = Vec.sub(this.yi, this.guess);
 
-                messenger.on('line-extended', _.bind(this.markExtended, this));
+                this.halfwayPoint = Vec.add(this.yi, diff.scale(-.5));
+                this.translation.to = Vec.sub(center, this.halfwayPoint);
+                this.translation.start();
 
-                this.marker = new Marker;
+                var rot = Vec.sub(this.yi, this.guess).angle(xaxis);
 
-                this.drawables = [this.leftLine, this.rightLine, this.marker];
-
-            },
-
-            bindEvents: function() {
-
-                this.canvas.addEventListener('click', this.handleClick);
-
-                if ('ontouchend' in window) {
-                    this.canvas.addEventListener('touchend', this.handleClick);
+                if (this.guess.y < this.yi.y) {
+                    rot = -rot;
                 }
 
-                document.addEventListener('keyup', this.handleKey);
-            },
+                this.rotation = new Tween(0, rot);
+                this.rotation.onFinish = this.finishAligning;
+                this.rotation.start();
+            }
+        },
 
-            handleClick: function(e) {
-                if (this.state != ROUNDINIT) {
-                    return;
-                }
-                this.state = 1;
-                this.guess = new Vec(e.offsetX, e.offsetY)
-                this.displayIntersection(this.guess);
-            },
+        finishAligning: function() {
+            if (!(this.state === MEASURE)) {
+                this.ruler = new Line();
+                this.ruler.start = this.guess;
+                this.ruler.alpha = (new Tween(1, 1));
+                this.ruler.end = new TweenVec(this.guess, this.yi);
+                this.drawables.push(this.ruler);
+                this.ruler.end.onFinish = this.updateScore;
+                this.ruler.end.start();
+            }
+        },
 
-            handleKey: function(e) {
-                if (e.which === 32)
-                this.running = !this.running;
-            },
+        scoreGuess: function() {
+            var dist = this.yi.dist(this.guess);
+            return Math.ceil(Math.max((30 - (dist)) * 10, 0));
+        },
 
-            displayIntersection: function(pos) {
-                this.marker.reset(pos);
-                this.leftLine.extend();
-                this.rightLine.extend();
-            },
+        updateScore: function() {
+            this.score += this.scoreGuess();
+            this.display.set('score', this.score);
+        },
 
-            run: function(step) {
-                _time = step;
+        clear: function() {
+            // TODO, consider getting these locally
+            this.ctx.clearRect(0, 0, width, height);
+        },
 
-                if (this.running) {
-                    raf(this.run);
-                }
+        debugDraw: function() {
+            this.ctx.save();
+            this.ctx.fillStyle = 'white';
 
-                this.ctx.save();
-                this.clear();
-
-                if (this.state === EVALUATE) {
-                    // this.ctx.translate(this.translation.val().x, this.translation.val().y);
-                    if (this.rotation) {
-                        this.ctx.translate(this.halfwayPoint.x, this.halfwayPoint.y);
-                        this.ctx.rotate(this.rotation.val());
-                        this.ctx.translate(-this.halfwayPoint.x, -this.halfwayPoint.y);
-                    }
-                }
-
-                if (this.options.debug) {
-                    this.debugDraw();
-                }
-
-                var i = 0;
-                for (; i < this.drawables.length; i++) {
-                    this.drawables[i].draw(this.ctx);
-                    this.drawables[i].update();
-                }
-
-                this.ctx.restore();
-            },
-
-            start: function() {
-                this.running = true;
-                webkitRequestAnimationFrame(this.run);
-                this.nextRound();
-            },
-
-            stop: function() {
-                this.running = false;
-            },
-
-            nextRound: function() {
-                this.state = 'ROUNDINIT';
-
-                this.round++;
-                this.clicked = false;
-                this.yi = new Vec(this.bounds.width() / 2, Math.random() * this.bounds.height());
-                this.leftLine.generate(this.yi, this.leftBounds)
-                this.rightLine.generate(this.yi, this.rightBounds)
-                this.updateGameInfo();
-            }, 
-
-            updateGameInfo: function() {
-                this.display.set({ round: this.round, score: this.score });
-            },
-
-            markExtended: function() {
-                if (!(this.state === EVALUATE)) {
-                    this.state = EVALUATE;
-                    var diff = Vec.sub(this.yi, this.guess);
-
-                    this.halfwayPoint = Vec.add(this.yi, diff.scale(-.5));
-                    this.translation.to = Vec.sub(center, this.halfwayPoint);
-                    this.translation.start();
-
-                    var rot = Vec.sub(this.yi, this.guess).angle(xaxis);
-
-                    if (this.guess.y < this.yi.y) {
-                        rot = -rot;
-                    }
-
-                    this.rotation = new Tween(0, rot);
-                    this.rotation.onFinish = this.finishAligning;
-                    this.rotation.start();
-                }
-            },
-
-            finishAligning: function() {
-                if (!(this.state === MEASURE)) {
-                    console.log('finished');
-                }
-            },
-
-            clear: function() {
-                // TODO, consider getting these locally
-                this.ctx.clearRect(0, 0, width, height);
-            },
-
-            debugDraw: function() {
-                this.ctx.save();
-                this.ctx.fillStyle = 'white';
-
-                if (this.yi) {
-                    this.ctx.fillRect(this.yi.x, this.yi.y, 5, 5);
-                }
-
-                if (this.halfwayPoint) {
-                    this.ctx.fillStyle = 'red';
-                    this.ctx.fillRect(this.halfwayPoint.x, this.halfwayPoint.y, 5, 5);
-                }
-                if (this.guess && this.yi) {
-                    lineBetween(this.ctx, this.guess, this.yi, 'red');
-                }
-                this.ctx.fillStyle = 'pink';
-                this.ctx.fillRect(this.translation.val().x, this.translation.val().y, 10, 10);
-                fillBounds(this.ctx, this.leftBounds);
-                fillBounds(this.ctx, this.rightBounds);
-                this.ctx.restore();
+            if (this.yi) {
+                this.ctx.fillRect(this.yi.x, this.yi.y, 5, 5);
             }
 
-        };
+            if (this.halfwayPoint) {
+                this.ctx.fillStyle = 'red';
+                this.ctx.fillRect(this.halfwayPoint.x, this.halfwayPoint.y, 5, 5);
+            }
+            if (this.guess && this.yi) {
+                var stroke = {
+                    'strokeStyle': 'red'
+                };
+                Drawing.line(this.ctx, this.guess, this.yi, stroke);
+            }
+            this.ctx.fillStyle = 'pink';
+            this.ctx.fillRect(this.translation.val().x, this.translation.val().y, 10, 10);
+            Drawing.fillBounds(this.ctx, this.leftBounds);
+            Drawing.fillBounds(this.ctx, this.rightBounds);
+            this.ctx.restore();
+        }
 
-        var game = new Game(canvas, ctx);
-        game.start();
+    };
 
-        window.addEventListener('resize', _.debounce(resize, 30));
+    var game = new Game(canvas, ctx);
+    game.start();
+
+    window.addEventListener('resize', _.debounce(resize, 30));
 
 </script>
