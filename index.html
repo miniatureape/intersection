@@ -28,6 +28,8 @@
 
         #game-info {
             position: absolute;
+            top: 0;
+            color: #fff;
         }
 
     </style>
@@ -63,9 +65,12 @@
         halfY,
         center = new Vec(0, 0),
         origin = new Vec(0, 0),
+        xaxis = new Vec(1, 0),
         padding = 40,
         _time;
-    
+
+    var infoTemplateStr = "<label>score</label>: <%= score %> <%= round %> / 5"   
+
     var messenger = _.extend({}, Events);
 
     var makeBounds = function(topLeft, topRight, bottomLeft, bottomRight) {
@@ -133,6 +138,36 @@
             ctx.restore();
         }
 
+        var Display = function(elem, templateStr, attrs) {
+
+            this.elem = elem;
+            this.tpl = _.template(templateStr);
+
+            this.attrs = _.extend({
+                rounds: 5,
+                round: 1,
+                score: 0
+            }, attrs);
+
+        }
+
+        Display.prototype = {
+
+            set: function(prop, val) {
+                if (typeof prop === 'string') {
+                    this.attrs[prop] = val;
+                } else {
+                    this.attrs = _.extend(this.attrs, prop);
+                }
+                this.render();
+            },
+
+            render: function() {
+                this.elem.innerHTML = this.tpl(this.attrs);
+            }
+
+        }
+
         var Marker = function(pos) {
             this.size = new Tween(0, 30, 200);
             this.alpha = new Tween(0, .3, 200);
@@ -190,6 +225,8 @@
         Line.prototype = {
 
             draw: function(ctx) {
+                if (!this.start || !this.end) return;
+
                 if (this.debug) {
                     this.debugDraw(ctx);
                 }
@@ -237,24 +274,28 @@
                 messenger.trigger('line-extended');
             },
 
-
         };
 
-        var ROUNDINIT = 0,
-            EXTEND = 1,
-            EVALUATE = 2,
-            FINISH = 3;
+        var ROUNDINIT = 'ROUNDINIT',
+            EXTEND = 'EXTEND',
+            EVALUATE = 'EVALUATE',
+            MEASURE = 'MEASURE',
+            FINISH = 'FINISH';
 
         var Game = function(canvas, ctx, options) {
 
             this.options = _.extend({
-                debug: false,
+                debug: true,
                 gutter: 50
             }, options || {});
 
             this.canvas = canvas;
             this.ctx = ctx;
-            this.infoTpl = _.template("<label>score</label>: <%= score %> <%= round %> / 5");
+
+            this.display = new Display(
+                document.getElementById('game-info'), 
+                infoTemplateStr
+            );
 
             this.bounds = makeBounds(0, 0, canvas.width, canvas.height);
             this.leftBounds = makeBounds(0, canvas.height / 2, (canvas.width / 2) - this.options.gutter, (canvas.height / 2) + canvas.height / 2);
@@ -267,25 +308,30 @@
 
             this.state = ROUNDINIT;
 
-            this.yi = null;
-
-            this.translation = new TweenVec(origin, origin, 150);
-
-            this.leftLine = new Line;
-            this.rightLine = new Line;
-
-            messenger.on('line-extended', _.bind(this.markExtended, this));
-
-            this.marker = new Marker;
-
-            this.drawables = [this.leftLine, this.rightLine, this.marker];
-
             this.running = false;
             _.bindAll.apply(_, [this].concat(_.methods(this))); 
             this.bindEvents();
+            this.initialize();
         }
 
         Game.prototype = {
+
+            initialize: function() {
+                this.rotation = 0;
+                this.yi = null;
+
+                this.translation = new TweenVec(origin, origin, 150);
+
+                this.leftLine = new Line;
+                this.rightLine = new Line;
+
+                messenger.on('line-extended', _.bind(this.markExtended, this));
+
+                this.marker = new Marker;
+
+                this.drawables = [this.leftLine, this.rightLine, this.marker];
+
+            },
 
             bindEvents: function() {
 
@@ -329,7 +375,12 @@
                 this.clear();
 
                 if (this.state === EVALUATE) {
-                    this.ctx.translate(this.translation.val().x, this.translation.val().y);
+                    // this.ctx.translate(this.translation.val().x, this.translation.val().y);
+                    if (this.rotation) {
+                        this.ctx.translate(this.halfwayPoint.x, this.halfwayPoint.y);
+                        this.ctx.rotate(this.rotation.val());
+                        this.ctx.translate(-this.halfwayPoint.x, -this.halfwayPoint.y);
+                    }
                 }
 
                 if (this.options.debug) {
@@ -356,7 +407,7 @@
             },
 
             nextRound: function() {
-                this.state = 0;
+                this.state = 'ROUNDINIT';
 
                 this.round++;
                 this.clicked = false;
@@ -367,15 +418,33 @@
             }, 
 
             updateGameInfo: function() {
-                document.getElementById('game-info').innerHTML = this.infoTpl(this);
+                this.display.set({ round: this.round, score: this.score });
             },
 
             markExtended: function() {
                 if (!(this.state === EVALUATE)) {
                     this.state = EVALUATE;
-                    this.halfwayPoint = Vec.add(this.yi, Vec.sub(this.yi, this.guess).scale(-.5));
+                    var diff = Vec.sub(this.yi, this.guess);
+
+                    this.halfwayPoint = Vec.add(this.yi, diff.scale(-.5));
                     this.translation.to = Vec.sub(center, this.halfwayPoint);
                     this.translation.start();
+
+                    var rot = Vec.sub(this.yi, this.guess).angle(xaxis);
+
+                    if (this.guess.y < this.yi.y) {
+                        rot = -rot;
+                    }
+
+                    this.rotation = new Tween(0, rot);
+                    this.rotation.onFinish = this.finishAligning;
+                    this.rotation.start();
+                }
+            },
+
+            finishAligning: function() {
+                if (!(this.state === MEASURE)) {
+                    console.log('finished');
                 }
             },
 
@@ -387,10 +456,17 @@
             debugDraw: function() {
                 this.ctx.save();
                 this.ctx.fillStyle = 'white';
-                this.ctx.fillRect(this.yi.x, this.yi.y, 5, 5);
+
+                if (this.yi) {
+                    this.ctx.fillRect(this.yi.x, this.yi.y, 5, 5);
+                }
+
                 if (this.halfwayPoint) {
                     this.ctx.fillStyle = 'red';
                     this.ctx.fillRect(this.halfwayPoint.x, this.halfwayPoint.y, 5, 5);
+                }
+                if (this.guess && this.yi) {
+                    lineBetween(this.ctx, this.guess, this.yi, 'red');
                 }
                 this.ctx.fillStyle = 'pink';
                 this.ctx.fillRect(this.translation.val().x, this.translation.val().y, 10, 10);
