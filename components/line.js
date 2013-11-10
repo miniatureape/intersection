@@ -3,6 +3,8 @@
     var Line = function(options) {
         this.options = _.extend({
             rgb: [239,255,205],
+            strokeWidth: 1,
+            lineCap: 'square'
         }, options || {});
         this.start = null;
         this.end = null;
@@ -21,11 +23,13 @@
 
             ctx.save();
 
-            var stroke = {
-                'strokeStyle': 'rgba(' + this.options.rgb.join(',') + ',' + this.alpha.val() + ')'
+            var styles = {
+                'strokeStyle': 'rgba(' + this.options.rgb.join(',') + ',' + this.alpha.val() + ')',
+                'lineWidth': this.options.lineWidth,
+                'lineCap': this.options.lineCap
             }
 
-            Drawing.line(ctx, this.start, this.end.val(), stroke);
+            Drawing.line(ctx, this.start, this.end.val(), styles);
             ctx.restore();
 
         },

@@ -3,6 +3,7 @@
     var Drawing = {
 
         fillBounds: function(ctx, bounds, styles) {
+            var option;
             ctx.save();
 
             for (option in styles) {

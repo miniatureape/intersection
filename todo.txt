@@ -1,0 +1,9 @@
+Change tween to animate
+Consider making tween something that operates on objects instead of objects themselves
+Write flash messaging
+Make intro screen and add to game state
+Style info bar
+Make end screen with twitter options
+refactor code so resize changes the right things
+add touchstart to events
+mobile views

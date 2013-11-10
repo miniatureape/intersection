@@ -7,6 +7,7 @@
             height: 100%;
             width: 100%;
             background: #2E2633;
+            font-family: "Helvetica", "Arial", sans-serif;
         }
 
         #game-container {
@@ -32,12 +33,35 @@
             color: #fff;
         }
 
+        #flash {
+            position: absolute;
+            width: 100px;
+            top: 0;
+            left: 50%;
+            margin-left: -50px;
+            opacity: 0;
+            padding: 20px;
+            color: #2E2633;
+            -webkit-transition: opacity 1s;
+            background: #DCE9BE;
+        }
+
+        #flash.off {
+            left: -1000px;
+        }
+
+        #flash.show {
+            opacity: 1;
+        }
+
     </style>
 </head>
 
 <section id="game-container">
 
     <canvas id="canvas" width="800" height="600"></canvas>
+
+    <p id="flash" class="off"></p>
 
     <p id="game-info"></p>
 
@@ -52,6 +76,7 @@
 <script src="lib/events.js"></script>
 <script src="lib/vector2d.js"></script>
 <script src="lib/tween.js"></script>
+<script src="util.js"></script>
 <script src="geom.js"></script>
 <script src="drawing.js"></script>
 <script src="components/marker.js"></script>
@@ -60,7 +85,7 @@
 <script>
 
     var Vec = Vector2D,
-        raf = webkitRequestAnimationFrame,
+        raf = Util.requestAnimationFrame,
         canvas = document.getElementById('canvas'),
         ctx = canvas.getContext('2d'),
         _time, 
@@ -68,21 +93,23 @@
         height,
         halfX,
         halfY,
+
         padding = 40,
-        xaxis = new Vec(1, 0),
-        origin = new Vec(0, 0),
-        center = new Vec(0, 0),
-        infoTemplateStr = "<label>score</label>: <%= score %> <%= round %> / 5",
-        messenger = _.extend({}, Events);
+        xaxis   = new Vec(1, 0),
+        origin  = new Vec(0, 0),
+        center  = new Vec(0, 0),
+
+        infoTemplateStr  = '<label>score</label>: <%= score %> <%= round %> / 5',
+        flashTemplateStr = '<h1><label>Score:</label> <%= score %></h1><span class="round"><%= round %></span> / <span><%= total_rounds %>',
+        messenger        = _.extend({}, Events);
 
         // Game States
 
         ROUNDINIT = 'ROUNDINIT',
-        EXTEND = 'EXTEND',
-        EVALUATE = 'EVALUATE',
-        MEASURE = 'MEASURE',
-        FINISH = 'FINISH';
-
+        EXTEND    = 'EXTEND',
+        EVALUATE  = 'EVALUATE',
+        MEASURE   = 'MEASURE',
+        FINISH    = 'FINISH';
 
     var resize = function() {
         canvas.width  = document.documentElement.clientWidth - padding;
@@ -90,16 +117,49 @@
         height = canvas.height;
         width = canvas.width;
         halfX = width / 2
-        halfY = height /2;
+        halfY = height / 2;
         center.setCoords(halfX, halfY);
     }
     resize();
 
-    // debug
-
-    var Flash = function() {
-
+    var Flash = function(elem, options) {
+        this.elem = elem;
+        this.options = _.extend({
+            duration: 3000,
+        }, options);
+        this.state = 'off';
+        this.bindEvents();
     }
+
+    Flash.prototype = {
+
+        bindEvents: function() {
+            this.elem.addEventListener(Util.transitionEndName(), this.cleanup);
+        },
+
+        cleanup: function() {
+            if (this.state === 'off') {
+                this.elem.classList.add('off');
+            }
+        },
+
+        setMessage: function(msg) {
+            this.elem.querySelectorAll('.msg').text = msg;
+        },
+
+        show: function() {
+            this.state = 'on';
+            this.elem.classList.add('show');
+            this.elem.classList.remove('off');
+            setTimeout(_.bind(this.hide, this), 3000);
+        },
+
+        hide: function() {
+            this.state = 'off';
+            this.elem.classList.remove('show');
+        },
+
+    };
 
     var Display = function(elem, templateStr, attrs) {
 
@@ -158,7 +218,9 @@
         this.state = ROUNDINIT;
 
         this.running = false;
+
         _.bindAll.apply(_, [this].concat(_.methods(this))); 
+
         this.bindEvents();
         this.initialize();
     }
@@ -174,7 +236,7 @@
             this.leftLine = new Line;
             this.rightLine = new Line;
 
-            messenger.on('line-extended', _.bind(this.markExtended, this));
+            messenger.on('line-extended', _.bind(this.finishAligning, this));
 
             this.marker = new Marker;
 
@@ -186,18 +248,22 @@
 
             this.canvas.addEventListener('click', this.handleClick);
 
-            if ('ontouchend' in window) {
-                this.canvas.addEventListener('touchend', this.handleClick);
+            if ('ontouchstart' in window) {
+                this.canvas.addEventListener('touchstart', this.handleClick);
             }
 
             document.addEventListener('keyup', this.handleKey);
         },
 
         handleClick: function(e) {
+
+            e.preventDefault();
+
             if (this.state != ROUNDINIT) {
                 return;
             }
             this.state = 1;
+
             this.guess = new Vec(e.offsetX, e.offsetY)
             this.displayIntersection(this.guess);
         },
@@ -225,11 +291,13 @@
 
             if (this.state === EVALUATE) {
                 this.ctx.translate(this.translation.val().x, this.translation.val().y);
+                /*
                 if (this.rotation) {
                     this.ctx.translate(this.halfwayPoint.x, this.halfwayPoint.y);
                     this.ctx.rotate(this.rotation.val());
                     this.ctx.translate(-this.halfwayPoint.x, -this.halfwayPoint.y);
                 }
+                */
             }
 
             if (this.options.debug) {
@@ -286,19 +354,23 @@
                 }
 
                 this.rotation = new Tween(0, rot);
-                this.rotation.onFinish = this.finishAligning;
+                this.rotation.onFinish = this.updateScore;
                 this.rotation.start();
             }
         },
 
         finishAligning: function() {
             if (!(this.state === MEASURE)) {
-                this.ruler = new Line();
+                this.ruler = new Line({
+                    rgb: [153,23,60],
+                    lineWidth: 2,
+                    lineCap: 'round'
+                });
                 this.ruler.start = this.guess;
                 this.ruler.alpha = (new Tween(1, 1));
                 this.ruler.end = new TweenVec(this.guess, this.yi);
                 this.drawables.push(this.ruler);
-                this.ruler.end.onFinish = this.updateScore;
+                this.ruler.end.onFinish = this.markExtended;
                 this.ruler.end.start();
             }
         },
@@ -319,6 +391,7 @@
         },
 
         debugDraw: function() {
+
             this.ctx.save();
             this.ctx.fillStyle = 'white';
 
@@ -330,12 +403,14 @@
                 this.ctx.fillStyle = 'red';
                 this.ctx.fillRect(this.halfwayPoint.x, this.halfwayPoint.y, 5, 5);
             }
+
             if (this.guess && this.yi) {
                 var stroke = {
                     'strokeStyle': 'red'
                 };
                 Drawing.line(this.ctx, this.guess, this.yi, stroke);
             }
+
             this.ctx.fillStyle = 'pink';
             this.ctx.fillRect(this.translation.val().x, this.translation.val().y, 10, 10);
             Drawing.fillBounds(this.ctx, this.leftBounds);
@@ -347,6 +422,8 @@
 
     var game = new Game(canvas, ctx);
     game.start();
+
+    var f  = new Flash(document.getElementById('flash'));
 
     window.addEventListener('resize', _.debounce(resize, 30));
 
