@@ -107,8 +107,8 @@
 
         ROUNDINIT = 'ROUNDINIT',
         EXTEND    = 'EXTEND',
-        EVALUATE  = 'EVALUATE',
         MEASURE   = 'MEASURE',
+        EVALUATE  = 'EVALUATE',
         FINISH    = 'FINISH';
 
     var resize = function() {
@@ -132,6 +132,11 @@
     }
 
     Flash.prototype = {
+        
+        moveTo: function(x, y) {
+            this.elem.style.left = y;
+            this.elem.style.top = y;
+        },
 
         bindEvents: function() {
             this.elem.addEventListener(Util.transitionEndName(), this.cleanup);
@@ -262,7 +267,7 @@
             if (this.state != ROUNDINIT) {
                 return;
             }
-            this.state = 1;
+            this.state = 'EXTEND';
 
             this.guess = new Vec(e.offsetX, e.offsetY)
             this.displayIntersection(this.guess);
@@ -291,13 +296,6 @@
 
             if (this.state === EVALUATE) {
                 this.ctx.translate(this.translation.val().x, this.translation.val().y);
-                /*
-                if (this.rotation) {
-                    this.ctx.translate(this.halfwayPoint.x, this.halfwayPoint.y);
-                    this.ctx.rotate(this.rotation.val());
-                    this.ctx.translate(-this.halfwayPoint.x, -this.halfwayPoint.y);
-                }
-                */
             }
 
             if (this.options.debug) {
@@ -345,22 +343,18 @@
 
                 this.halfwayPoint = Vec.add(this.yi, diff.scale(-.5));
                 this.translation.to = Vec.sub(center, this.halfwayPoint);
-                this.translation.start();
-
-                var rot = Vec.sub(this.yi, this.guess).angle(xaxis);
-
-                if (this.guess.y < this.yi.y) {
-                    rot = -rot;
-                }
-
-                this.rotation = new Tween(0, rot);
-                this.rotation.onFinish = this.updateScore;
-                this.rotation.start();
+                this.translation.debug = true;
+                this.translation.start(1000);
             }
         },
 
         finishAligning: function() {
             if (!(this.state === MEASURE)) {
+                this.state = 'MEASURE';
+                this.marker.size = new Tween(this.marker.size.val(), this.guess.dist(this.yi));
+                this.marker.size.start();
+                this.marker.size.onFinish = this.markExtended;
+                /*
                 this.ruler = new Line({
                     rgb: [153,23,60],
                     lineWidth: 2,
@@ -371,7 +365,9 @@
                 this.ruler.end = new TweenVec(this.guess, this.yi);
                 this.drawables.push(this.ruler);
                 this.ruler.end.onFinish = this.markExtended;
+                this.ruler.end.debug = true;
                 this.ruler.end.start();
+                */
             }
         },
 
