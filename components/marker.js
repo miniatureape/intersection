@@ -30,7 +30,7 @@
             ctx.save();
             ctx.fillStyle = fill;
             ctx.strokeStyle = stroke;
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 1;
             ctx.translate(this.pos.x, this.pos.y);
             ctx.beginPath();
             ctx.arc(0, 0, this.size.val(), 0, Math.PI * 2);
