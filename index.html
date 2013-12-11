@@ -313,7 +313,7 @@
 
         start: function() {
             this.running = true;
-            webkitRequestAnimationFrame(this.run);
+            raf(this.run);
             this.nextRound();
         },
 
@@ -354,20 +354,6 @@
                 this.marker.size = new Tween(this.marker.size.val(), this.guess.dist(this.yi));
                 this.marker.size.start();
                 this.marker.size.onFinish = this.markExtended;
-                /*
-                this.ruler = new Line({
-                    rgb: [153,23,60],
-                    lineWidth: 2,
-                    lineCap: 'round'
-                });
-                this.ruler.start = this.guess;
-                this.ruler.alpha = (new Tween(1, 1));
-                this.ruler.end = new TweenVec(this.guess, this.yi);
-                this.drawables.push(this.ruler);
-                this.ruler.end.onFinish = this.markExtended;
-                this.ruler.end.debug = true;
-                this.ruler.end.start();
-                */
             }
         },
 
