@@ -122,6 +122,60 @@
     }
     resize();
 
+    var Beacon = function(options) {
+        this.options = _.extend({
+            interval: 1000,
+            times: 1,
+            duration: 500,
+            maxRadius: 100,
+            rgb: [127, 127, 127],
+        }, options);
+
+        this.running = false;
+        this.pos = new Vec(0, 0);
+        this.last = 0;
+
+        this.count = 0;
+        this.radius = new Tween(0, this.options.maxRadius, this.duration);
+        this.alpha = new Tween(1, 0, this.duration)
+
+    };
+
+    Beacon.prototype = {
+        
+        update: function(step) {
+            
+            if ((step - this.last) < this.options.interval) {
+                return;
+            }
+
+            if (this.count > this.options.time) {
+                this.running = false;
+            }
+
+            this.radius.start();
+            this.alpha.start();
+            this.last = step;
+            this.count++
+            
+        },
+
+        setPos: function(pos) {
+            this.pos = pos;
+        },
+
+        draw: function(ctx) {
+            var stroke = 'rgba(' + this.options.rgb.join(',') + ',' + this.alpha.val() + ')';
+            ctx.translate(this.pos.x, this.pos.y);
+            ctx.lineStyle = 'white';
+            ctx.beginPath();
+            ctx.lineStyle = stroke;
+            ctx.arc(0, 0, this.radius.val(), 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        
+    };
+
     var Flash = function(elem, options) {
         this.elem = elem;
         this.options = _.extend({
@@ -245,7 +299,11 @@
 
             this.marker = new Marker;
 
-            this.drawables = [this.leftLine, this.rightLine, this.marker];
+            this.drawables = [
+                this.leftLine, 
+                this.rightLine, 
+                this.marker,
+            ];
 
         },
 
@@ -305,7 +363,7 @@
             var i = 0;
             for (; i < this.drawables.length; i++) {
                 this.drawables[i].draw(this.ctx);
-                this.drawables[i].update();
+                this.drawables[i].update(step);
             }
 
             this.ctx.restore();
