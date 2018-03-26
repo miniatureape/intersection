@@ -2,6 +2,24 @@
     
     var Util = {
 
+        createElem: function(elname, attrs, children) {
+            console.log(arguments);
+            children = children || [];
+            var el;
+            if (elname === 'text') {
+                el = document.createTextNode(attrs);
+            } else {
+                el = document.createElement(elname);
+                for (var key in attrs) {
+                    el.setAttribute(key, attrs[key]);
+                }
+            }
+            for (var i = 0; i < children.length; i++) {
+                el.appendChild(this.createElem.apply(this, children[i]))
+            }
+            return el;
+        },
+
         transitionEndName: function(){
             var t;
             var el = document.createElement('fakeelement');
