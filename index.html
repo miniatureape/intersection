@@ -1,470 +1,78 @@
-<head>
-    <style>
-
-        html, body {
-            padding: 0;
-            margin: 0;
-            height: 100%;
-            width: 100%;
-            background: #2E2633;
-            font-family: "Helvetica", "Arial", sans-serif;
-        }
-
-        #game-container {
-            width: 100%;
-            height: 100%;
-            position: relative;
-        }
-
-        canvas {
-            margin: 20px;
-        }
-
-        #intro {
-            display: none;
-            position: absolute;
-            width: 40%;
-            top: 50px;
-        }
-
-        #game-info {
-            position: absolute;
-            top: 0;
-            color: #fff;
-        }
-
-        #flash {
-            position: absolute;
-            width: 100px;
-            top: 0;
-            left: 50%;
-            margin-left: -50px;
-            opacity: 0;
-            padding: 20px;
-            color: #2E2633;
-            -webkit-transition: opacity 1s;
-            background: #DCE9BE;
-        }
-
-        #flash.off {
-            left: -1000px;
-        }
-
-        #flash.show {
-            opacity: 1;
-        }
-
-    </style>
-</head>
-
-<section id="game-container">
-
-    <canvas id="canvas" width="800" height="600"></canvas>
-
-    <p id="flash" class="off"></p>
-
-    <p id="game-info"></p>
-
-    <section id="intro">
-        <h1>Vanishing Point</h1>
-        <p>Tap the point the two line segments would intersect.</p>
-    </section>
-
-</section>
-
-<script src="lib/underscore.js"></script>
-<script src="lib/events.js"></script>
-<script src="lib/vector2d.js"></script>
-<script src="lib/tween.js"></script>
-<script src="util.js"></script>
-<script src="geom.js"></script>
-<script src="drawing.js"></script>
-<script src="components/marker.js"></script>
-<script src="components/line.js"></script>
-
-<script>
-
-    var Vec = Vector2D,
-        raf = Util.requestAnimationFrame,
-        canvas = document.getElementById('canvas'),
-        ctx = canvas.getContext('2d'),
-        _time, 
-        width,
-        height,
-        halfX,
-        halfY,
-
-        padding = 40,
-        xaxis   = new Vec(1, 0),
-        origin  = new Vec(0, 0),
-        center  = new Vec(0, 0),
-
-        infoTemplateStr  = '<label>score</label>: <%= score %> <%= round %> / 5',
-        flashTemplateStr = '<h1><label>Score:</label> <%= score %></h1><span class="round"><%= round %></span> / <span><%= total_rounds %>',
-        messenger        = _.extend({}, Events);
-
-        // Game States
-
-        ROUNDINIT = 'ROUNDINIT',
-        EXTEND    = 'EXTEND',
-        MEASURE   = 'MEASURE',
-        EVALUATE  = 'EVALUATE',
-        FINISH    = 'FINISH';
-
-    var resize = function() {
-        canvas.width  = document.documentElement.clientWidth - padding;
-        canvas.height = document.documentElement.clientHeight - padding;
-        height = canvas.height;
-        width = canvas.width;
-        halfX = width / 2
-        halfY = height / 2;
-        center.setCoords(halfX, halfY);
-    }
-    resize();
-
-    var Beacon = function(options) {
-        this.options = _.extend({
-            interval: 1000,
-            times: 1,
-            duration: 500,
-            maxRadius: 100,
-            rgb: [127, 127, 127],
-        }, options);
-
-        this.running = false;
-        this.pos = new Vec(0, 0);
-        this.last = 0;
-
-        this.count = 0;
-        this.radius = new Tween(0, this.options.maxRadius, this.duration);
-        this.alpha = new Tween(1, 0, this.duration)
-
-    };
-
-    Beacon.prototype = {
-        
-        update: function(step) {
-            
-            if ((step - this.last) < this.options.interval) {
-                return;
-            }
-
-            if (this.count > this.options.time) {
-                this.running = false;
-            }
-
-            this.radius.start();
-            this.alpha.start();
-            this.last = step;
-            this.count++
-            
-        },
-
-        setPos: function(pos) {
-            this.pos = pos;
-        },
-
-        draw: function(ctx) {
-            var stroke = 'rgba(' + this.options.rgb.join(',') + ',' + this.alpha.val() + ')';
-            ctx.translate(this.pos.x, this.pos.y);
-            ctx.lineStyle = 'white';
-            ctx.beginPath();
-            ctx.lineStyle = stroke;
-            ctx.arc(0, 0, this.radius.val(), 0, Math.PI * 2);
-            ctx.stroke();
-        }
-        
-    };
-
-    var Flash = function(elem, options) {
-        this.elem = elem;
-        this.options = _.extend({
-            duration: 3000,
-        }, options);
-        this.state = 'off';
-        this.bindEvents();
-    }
-
-    Flash.prototype = {
-        
-        moveTo: function(x, y) {
-            this.elem.style.left = y;
-            this.elem.style.top = y;
-        },
-
-        bindEvents: function() {
-            this.elem.addEventListener(Util.transitionEndName(), this.cleanup);
-        },
-
-        cleanup: function() {
-            if (this.state === 'off') {
-                this.elem.classList.add('off');
-            }
-        },
-
-        setMessage: function(msg) {
-            this.elem.querySelectorAll('.msg').text = msg;
-        },
-
-        show: function() {
-            this.state = 'on';
-            this.elem.classList.add('show');
-            this.elem.classList.remove('off');
-            setTimeout(_.bind(this.hide, this), 3000);
-        },
-
-        hide: function() {
-            this.state = 'off';
-            this.elem.classList.remove('show');
-        },
-
-    };
-
-    var Display = function(elem, templateStr, attrs) {
-
-        this.elem = elem;
-        this.tpl = _.template(templateStr);
-
-        this.attrs = _.extend({
-            rounds: 5,
-            round: 1,
-            score: 0
-        }, attrs);
-
-    }
-
-    Display.prototype = {
-
-        set: function(prop, val) {
-            if (typeof prop === 'string') {
-                this.attrs[prop] = val;
-            } else {
-                this.attrs = _.extend(this.attrs, prop);
-            }
-            this.render();
-        },
-
-        render: function() {
-            this.elem.innerHTML = this.tpl(this.attrs);
-        }
-
-    }
-
-    var Game = function(canvas, ctx, options) {
-
-        this.options = _.extend({
-            debug: false,
-            gutter: 50
-        }, options || {});
-
-        this.canvas = canvas;
-        this.ctx = ctx;
-
-        this.display = new Display(
-            document.getElementById('game-info'), 
-            infoTemplateStr
-        );
-
-        this.bounds = Geometry.makeBounds(0, 0, canvas.width, canvas.height);
-        this.leftBounds = Geometry.makeBounds(0, canvas.height / 2, (canvas.width / 2) - this.options.gutter, (canvas.height / 2) + canvas.height / 2);
-        this.rightBounds = Geometry.makeBounds((canvas.width / 2) + this.options.gutter, canvas.height / 2, canvas.width, (canvas.height / 2) + canvas.height / 2);
-
-        this.guess = null;
-
-        this.round = 0;
-        this.score = 0;
-
-        this.state = ROUNDINIT;
-
-        this.running = false;
-
-        _.bindAll.apply(_, [this].concat(_.methods(this))); 
-
-        this.bindEvents();
-        this.initialize();
-    }
-
-    Game.prototype = {
-
-        initialize: function() {
-            this.rotation = 0;
-            this.yi = null;
-
-            this.translation = new TweenVec(origin, origin);
-
-            this.leftLine = new Line;
-            this.rightLine = new Line;
-
-            messenger.on('line-extended', _.bind(this.finishAligning, this));
-
-            this.marker = new Marker;
-
-            this.drawables = [
-                this.leftLine, 
-                this.rightLine, 
-                this.marker,
-            ];
-
-        },
-
-        bindEvents: function() {
-
-            this.canvas.addEventListener('click', this.handleClick);
-
-            if ('ontouchstart' in window) {
-                this.canvas.addEventListener('touchstart', this.handleClick);
-            }
-
-            document.addEventListener('keyup', this.handleKey);
-        },
-
-        handleClick: function(e) {
-
-            e.preventDefault();
-
-            if (this.state != ROUNDINIT) {
-                return;
-            }
-            this.state = 'EXTEND';
-
-            this.guess = new Vec(e.offsetX, e.offsetY)
-            this.displayIntersection(this.guess);
-        },
-
-        handleKey: function(e) {
-            if (e.which === 32)
-            this.running = !this.running;
-        },
-
-        displayIntersection: function(pos) {
-            this.marker.reset(pos);
-            this.leftLine.extend();
-            this.rightLine.extend();
-        },
-
-        run: function(step) {
-            _time = step;
-
-            if (this.running) {
-                raf(this.run);
-            }
-
-            this.ctx.save();
-            this.clear();
-
-            if (this.state === EVALUATE) {
-                this.ctx.translate(this.translation.val().x, this.translation.val().y);
-            }
-
-            if (this.options.debug) {
-                this.debugDraw();
-            }
-
-            var i = 0;
-            for (; i < this.drawables.length; i++) {
-                this.drawables[i].draw(this.ctx);
-                this.drawables[i].update(step);
-            }
-
-            this.ctx.restore();
-        },
-
-        start: function() {
-            this.running = true;
-            raf(this.run);
-            this.nextRound();
-        },
-
-        stop: function() {
-            this.running = false;
-        },
-
-        nextRound: function() {
-            this.state = 'ROUNDINIT';
-
-            this.round++;
-            this.clicked = false;
-            this.yi = new Vec(this.bounds.width() / 2, Math.random() * this.bounds.height());
-            this.leftLine.generate(this.yi, this.leftBounds)
-            this.rightLine.generate(this.yi, this.rightBounds)
-            this.updateGameInfo();
-        }, 
-
-        updateGameInfo: function() {
-            this.display.set({ round: this.round, score: this.score });
-        },
-
-        markExtended: function() {
-            if (!(this.state === EVALUATE)) {
-                this.state = EVALUATE;
-                var diff = Vec.sub(this.yi, this.guess);
-
-                this.halfwayPoint = Vec.add(this.yi, diff.scale(-.5));
-                this.translation.to = Vec.sub(center, this.halfwayPoint);
-                this.translation.debug = true;
-                this.translation.start(1000);
-            }
-        },
-
-        finishAligning: function() {
-            if (!(this.state === MEASURE)) {
-                this.state = 'MEASURE';
-                this.marker.size = new Tween(this.marker.size.val(), this.guess.dist(this.yi));
-                this.marker.size.start();
-                this.marker.size.onFinish = this.markExtended;
-            }
-        },
-
-        scoreGuess: function() {
-            var dist = this.yi.dist(this.guess);
-            return Math.ceil(Math.max((30 - (dist)) * 10, 0));
-        },
-
-        updateScore: function() {
-            this.score += this.scoreGuess();
-            this.display.set('score', this.score);
-        },
-
-        clear: function() {
-            // TODO, consider getting these locally
-            this.ctx.clearRect(0, 0, width, height);
-        },
-
-        debugDraw: function() {
-
-            this.ctx.save();
-            this.ctx.fillStyle = 'white';
-
-            if (this.yi) {
-                this.ctx.fillRect(this.yi.x, this.yi.y, 5, 5);
-            }
-
-            if (this.halfwayPoint) {
-                this.ctx.fillStyle = 'red';
-                this.ctx.fillRect(this.halfwayPoint.x, this.halfwayPoint.y, 5, 5);
-            }
-
-            if (this.guess && this.yi) {
-                var stroke = {
-                    'strokeStyle': 'red'
-                };
-                Drawing.line(this.ctx, this.guess, this.yi, stroke);
-            }
-
-            this.ctx.fillStyle = 'pink';
-            this.ctx.fillRect(this.translation.val().x, this.translation.val().y, 10, 10);
-            Drawing.fillBounds(this.ctx, this.leftBounds);
-            Drawing.fillBounds(this.ctx, this.rightBounds);
-            this.ctx.restore();
-        }
-
-    };
-
-                                                                             var game = new Game(canvas, ctx, {debug:true});
-    game.start();
-
-    var f  = new Flash(document.getElementById('flash'));
-
-    window.addEventListener('resize', _.debounce(resize, 30));
-
-</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<link href="https://fonts.googleapis.com/css?family=Bungee+Outline|Bungee+Shade|Open+Sans" rel="stylesheet">
+<style>
+html, body {
+    padding: 0;
+    margin: 0;
+    height: 100%;
+    width: 100%;
+    background: #2E2633;
+    font-family: "Helvetica", "Arial", sans-serif;
+    color: white;
+}
+#title {
+    font-family: 'Bungee Shade', cursive;
+    color: white;
+    text-align: center;
+    padding-top: 30px;
+}
+button {
+    margin: 0 auto;
+    display: block;
+    border: 1px solid white;
+    background: transparent;
+    padding: 20px;
+    color: white;
+    cursor: pointer;
+}
+#demo {
+    position: absolute;
+    z-index: -1;
+}
+#instructions {
+    margin: 0 auto;
+    width: 300px;
+}
+#roundinfo {
+    opacity: 0;
+    transition: opacity .5s;
+}
+#round {
+    font-family: 'Bungee Shade', cursive;
+    padding-top: 30px;
+    text-align: center;
+}
+#congrats {
+    font-family: 'Bungee Shade', cursive;
+    padding-top: 30px;
+    text-align: center;
+}
+#distance {
+    font-family: 'Open Sans', sans-serif;
+    text-align: center;
+}
+#score {
+    font-family: 'Open Sans', sans-serif;
+    text-align: center;
+}
+#totalscore {
+    font-family: 'Open Sans', sans-serif;
+    text-align: center;
+}
+.fadein {
+    opacity: 1 !important;
+}
+</style>
+<body>
+    <script src="lib/underscore.js"></script>
+    <script src="lib/events.js"></script>
+    <script src="lib/vector2d.js"></script>
+    <script src="lib/tween.js"></script>
+    <script src="util.js"></script>
+    <script src="geom.js"></script>
+    <script src="drawing.js"></script>
+    <script src="components/marker.js"></script>
+    <script src="components/line.js"></script>
+    <script src="playscreen.js"></script>
+    <script src="game.js"></script>
+</body>
