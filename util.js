@@ -3,7 +3,6 @@
     var Util = {
 
         createElem: function(elname, attrs, children) {
-            console.log(arguments);
             children = children || [];
             var el;
             if (elname === 'text') {

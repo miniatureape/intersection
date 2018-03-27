@@ -74,6 +74,13 @@ window.ComponentFactory = {
                 );
                 var button = container.querySelector('#restartButton');
                 button.addEventListener('click', this.onDone);
+                twttr.widgets.createShareButton(
+                  '/',
+                  container,
+                  {
+                    text: 'I just scored ' + args.totalScore + ' on Intersection. http://miniatureape.github.io/intersection/'
+                  }
+                );
                 return container
             },
             onDone: function() {
