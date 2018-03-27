@@ -1,68 +1,78 @@
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<link href="https://fonts.googleapis.com/css?family=Bungee+Outline|Bungee+Shade|Open+Sans" rel="stylesheet">
-<style>
-html, body {
-    padding: 0;
-    margin: 0;
-    height: 100%;
-    width: 100%;
-    background: #2E2633;
-    font-family: "Helvetica", "Arial", sans-serif;
-    color: white;
-}
-#title {
-    font-family: 'Bungee Shade', cursive;
-    color: white;
-    text-align: center;
-    padding-top: 30px;
-}
-button {
-    margin: 0 auto;
-    display: block;
-    border: 1px solid white;
-    background: transparent;
-    padding: 20px;
-    color: white;
-    cursor: pointer;
-}
-#demo {
-    position: absolute;
-    z-index: -1;
-}
-#instructions {
-    margin: 0 auto;
-    width: 300px;
-}
-#roundinfo {
-    opacity: 0;
-    transition: opacity .5s;
-}
-#round {
-    font-family: 'Bungee Shade', cursive;
-    padding-top: 30px;
-    text-align: center;
-}
-#congrats {
-    font-family: 'Bungee Shade', cursive;
-    padding-top: 30px;
-    text-align: center;
-}
-#distance {
-    font-family: 'Open Sans', sans-serif;
-    text-align: center;
-}
-#score {
-    font-family: 'Open Sans', sans-serif;
-    text-align: center;
-}
-#totalscore {
-    font-family: 'Open Sans', sans-serif;
-    text-align: center;
-}
-.fadein {
-    opacity: 1 !important;
-}
-</style>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-116494031-1"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'UA-116494031-1');
+    </script>
+    <link href="https://fonts.googleapis.com/css?family=Bungee+Outline|Bungee+Shade|Open+Sans" rel="stylesheet">
+    <style>
+    html, body {
+        padding: 0;
+        margin: 0;
+        height: 100%;
+        width: 100%;
+        background: #2E2633;
+        font-family: "Helvetica", "Arial", sans-serif;
+        color: white;
+    }
+    #title {
+        font-family: 'Bungee Shade', cursive;
+        color: white;
+        text-align: center;
+        padding-top: 30px;
+    }
+    button {
+        margin: 0 auto;
+        display: block;
+        border: 1px solid white;
+        background: transparent;
+        padding: 20px;
+        color: white;
+        cursor: pointer;
+    }
+    #demo {
+        position: absolute;
+        z-index: -1;
+    }
+    #instructions {
+        margin: 0 auto;
+        width: 300px;
+    }
+    #roundinfo {
+        opacity: 0;
+        transition: opacity .5s;
+    }
+    #round {
+        font-family: 'Bungee Shade', cursive;
+        padding-top: 30px;
+        text-align: center;
+    }
+    #congrats {
+        font-family: 'Bungee Shade', cursive;
+        padding-top: 30px;
+        text-align: center;
+    }
+    #distance {
+        font-family: 'Open Sans', sans-serif;
+        text-align: center;
+    }
+    #score {
+        font-family: 'Open Sans', sans-serif;
+        text-align: center;
+    }
+    #totalscore {
+        font-family: 'Open Sans', sans-serif;
+        text-align: center;
+    }
+    .fadein {
+        opacity: 1 !important;
+    }
+    </style>
+</head>
 <body>
     <script src="lib/underscore.js"></script>
     <script src="lib/events.js"></script>
