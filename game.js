@@ -15,6 +15,29 @@ window.ComponentFactory = {
                 button.addEventListener('click', this.onDone);
                 var canvas = container.querySelector('#demo');
                 resize(canvas);
+                Demo.start(canvas);
+                return container;
+            },
+            onDone: function() {
+                Demo.running = false;
+                next();
+            }
+        }
+    },
+    instructionsScreen: function(args, next) {
+        return {
+            render: function() {
+                var container = Util.createElem(
+                    'p', 
+                    {id: "instructions"}, 
+                    [
+                        ['text', 'Tap where the think the lines will intersect.'],
+                    ]
+                );
+                setTimeout(function() {
+                    container.classList.add('fadeout');
+                }, 2000);
+                setTimeout(this.onDone.bind(this), 3000);
                 return container;
             },
             onDone: function() {
@@ -49,7 +72,6 @@ window.ComponentFactory = {
                         ['h2', {id: 'score'}, [['text', args.roundScore + "pts"]]]
                     ]
                 );
-                console.log(container);
                 setTimeout(function() {
                     container.classList.add('fadein');
                 }, 1)
@@ -103,11 +125,17 @@ window.App = {
         titleScreen: {
             from: ['titleScreen', 'endScreen'],
             next: function() {
+                this.applyState('instructionsScreen');
+            },
+        },
+        instructionsScreen: {
+            from: ['titleScreen'],
+            next: function() {
                 this.applyState('play');
             },
         },
         play: {
-            from: ['titleScreen', 'scoreScreen', 'endScreen'],
+            from: ['instructionsScreen', 'scoreScreen', 'endScreen'],
             next: function(roundScore, distance) {
                 this.round++;
                 this.score += roundScore;

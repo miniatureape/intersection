@@ -5,7 +5,6 @@
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-
       gtag('config', 'UA-116494031-1');
     </script>
     <link href="https://fonts.googleapis.com/css?family=Bungee+Outline|Bungee+Shade|Open+Sans" rel="stylesheet">
@@ -25,6 +24,17 @@
         text-align: center;
         padding-top: 30px;
     }
+    #startButton {
+        position: relative;
+        z-index: 100;
+    }
+    #instructions {
+        margin: 30px auto;
+        width: 300px;
+        border: solid 1px white;
+        padding: 20px;
+        transition: opacity 1s;
+    }
     button {
         margin: 0 auto;
         display: block;
@@ -36,11 +46,7 @@
     }
     #demo {
         position: absolute;
-        z-index: -1;
-    }
-    #instructions {
-        margin: 0 auto;
-        width: 300px;
+        z-index: 0;
     }
     #roundinfo {
         opacity: 0;
@@ -71,6 +77,9 @@
     .fadein {
         opacity: 1 !important;
     }
+    .fadeout {
+        opacity: 0 !important;
+    }
     .twitter-share-button {
         margin: 20px auto;
         display: block;
@@ -83,6 +92,7 @@
     <script src="lib/vector2d.js"></script>
     <script src="lib/tween.js"></script>
     <script src="util.js"></script>
+    <script src="demo.js"></script>
     <script src="geom.js"></script>
     <script src="drawing.js"></script>
     <script src="components/marker.js"></script>
