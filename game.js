@@ -31,7 +31,7 @@ window.ComponentFactory = {
                     'p', 
                     {id: "instructions"}, 
                     [
-                        ['text', 'Tap where the think the lines will intersect.'],
+                        ['text', 'Tap where you think the lines will intersect.'],
                     ]
                 );
                 setTimeout(function() {
