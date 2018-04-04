@@ -165,7 +165,8 @@
 
         getScore: function() {
             var dist = this.getDistance();
-            if (dist === 0) return 1000;
+            dist = Math.round(dist);
+            if (dist < 1) return 1000;
             return Math.round((1 / dist) * 1000);
         },
 
